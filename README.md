@@ -1,49 +1,50 @@
 # Demo Mini ChatGPT
 
-Demo didáctica para la charla **Más allá del prompt**. Parte del pequeño modelo de lenguaje construido en `Seikened/semestre_v/procesamiento_lenguaje/modelo_red_lenguaje.ipynb` y hace visible el ciclo de predicción del siguiente token.
+Demo didáctica para **Más allá del prompt**: observar, paso a paso, cómo un modelo de lenguaje convierte contexto en una distribución de probabilidad y selecciona el siguiente token.
 
-La arquitectura conserva la idea del ejercicio de clase: N-grama de orden 4, ventana de tres tokens, embeddings, red feed-forward, logits, softmax y generación token por token. Para la presentación se usa un corpus sintético limpio y pequeño, de modo que el modelo pueda entrenarse rápido y proyectarse sin sorpresas.
-
-## Demo visual
+## Ejecutar
 
 ```bash
 uv sync
 uv run python main.py
 ```
 
-Se abrirá `http://localhost:8080` en el navegador.
+Abre `http://127.0.0.1:8080`.
 
-La interfaz permite detener y observar cada token. Primero muestra la distribución completa sobre el vocabulario; después resalta la palabra elegida; finalmente incorpora esa palabra a la oración y vuelve a calcular el siguiente paso.
+La primera ejecución de la V2 descarga y carga `mrm8488/spanish-gpt2`. Hugging Face lo deja en caché local para ejecuciones posteriores. Si el modelo no puede cargarse, la pantalla permite usar el modelo pequeño de la clase.
 
-En pantalla se muestran simultáneamente:
+## V2 visual
 
-- la oración que se está formando;
-- la ventana actual de tres tokens;
-- el universo completo de palabras, donde tamaño y opacidad representan probabilidad relativa;
-- el Top-10 de candidatos con su probabilidad;
-- la palabra finalmente elegida;
-- un mapa PCA 2D de los embeddings y los vecinos de la palabra seleccionada;
-- el flujo `contexto → embeddings → red → logits → softmax → selección`;
-- temperatura y comparación entre muestreo probabilístico y `argmax` determinista.
+La interfaz está hecha con HTML/CSS/JavaScript nativo, D3 y un backend local FastAPI. La oración es editable en cualquier momento: el siguiente paso siempre se recalcula usando exactamente el texto que esté escrito.
 
-La pausa didáctica puede ajustarse entre 0.5 y 6 segundos por token. También puede avanzarse manualmente con **Siguiente token**.
+Cada token generado guarda su `GenerationState`: texto anterior y posterior, tokenización, candidatos, probabilidades, token elegido, temperatura y estrategia de selección. En la interfaz puedes hacer clic en cualquier token del historial y volver a inspeccionar el estado en el que fue generado.
 
-## Demo de terminal
+El flujo visual principal es:
 
-La versión anterior con Rich sigue disponible como fallback:
+```text
+texto → tokens → modelo → logits → softmax → probabilidades → selección → nuevo token
+```
+
+El universo de tokens usa una escala visual suavizada para que no desaparezcan todas las alternativas cuando existe un candidato dominante. Se muestran los candidatos principales y, por separado, la masa de probabilidad del resto del vocabulario.
+
+## Modelos
+
+### Spanish GPT-2
+
+Modelo principal de la V2: `mrm8488/spanish-gpt2`, un GPT-2 pequeño entrenado desde cero en español sobre `large_spanish_corpus` (~20 GB). Tiene un vocabulario BPE mucho mayor que la demo de clase y permite observar subpalabras/tokens reales.
+
+### Modelo de clase
+
+Se conserva la red del notebook `Seikened/semestre_v/procesamiento_lenguaje/modelo_red_lenguaje.ipynb` como comparación didáctica.
+
+La versión compacta actual usa 792 frases sintéticas, 5,182 tokens observados, 141 tokens únicos + 3 especiales (144 de vocabulario) y 5,974 ejemplos `contexto → siguiente token`.
+
+## Terminal
+
+La demo anterior con Rich sigue disponible:
 
 ```bash
 uv run demo-mini-chat-cli
-```
-
-## Modelo
-
-La primera ejecución entrena el modelo pequeño y guarda el checkpoint en `.artifacts/mini_language_model.pt`. Las siguientes ejecuciones cargan ese checkpoint.
-
-Para forzar un nuevo entrenamiento desde la terminal:
-
-```bash
-uv run demo-mini-chat-cli --retrain
 ```
 
 ## Pruebas
