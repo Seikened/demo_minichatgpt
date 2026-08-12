@@ -17,35 +17,74 @@
   </div>
 
   <main class="shell">
-    <header class="hero"><div><div class="eyebrow">MÁS ALLÁ DEL PROMPT</div><h1>¿Qué ve realmente un modelo?</h1><p>Texto → tokens → probabilidades → siguiente token.</p></div><div id="model-badge" class="model-badge">modelo sin cargar</div></header>
+    <header class="hero">
+      <div><div class="eyebrow">MÁS ALLÁ DEL PROMPT</div><h1>¿Qué ve realmente un modelo?</h1><p>Texto → tokens → probabilidades → siguiente token.</p></div>
+      <div id="model-badge" class="model-badge">modelo sin cargar</div>
+    </header>
 
-    <section class="editor-card card">
-      <div class="section-head compact"><div><span class="kicker">TU CONTEXTO</span><h2>Escribe o modifica la oración en cualquier momento</h2></div><span id="manual-badge" class="manual-badge hidden">contexto editado por ti</span></div>
-      <textarea id="prompt-editor" rows="3">La inteligencia artificial</textarea><div id="token-strip" class="token-strip"></div>
-    </section>
+    <nav class="experience-switch card" aria-label="modo de demostración">
+      <button id="autocomplete-tab" class="experience active"><span>01</span><b>Autocompletar</b><small>laboratorio lento y visual</small></button>
+      <button id="chat-tab" class="experience"><span>02</span><b>Chat</b><small>interfaz familiar, mismo mecanismo</small></button>
+    </nav>
 
-    <section class="control-dock card">
-      <div class="primary-controls"><button id="play-button" class="primary"><span id="play-icon">▶</span> Reproducir</button><button id="next-button" class="secondary">Siguiente token</button><button id="reset-button" class="ghost">Reiniciar</button></div>
-      <div class="sliders"><label><span>Temperatura <b id="temperature-value">0.85</b></span><input id="temperature" type="range" min="0.2" max="2" step="0.05" value="0.85" /></label><label><span>Pausa <b id="speed-value">2.5 s</b></span><input id="speed" type="range" min="0.6" max="6" step="0.2" value="2.5" /></label></div>
-      <div class="mode-control"><button id="sample-mode" class="mode active">Muestreo</button><button id="greedy-mode" class="mode">Argmax</button></div>
-    </section>
+    <div id="autocomplete-view" class="mode-view">
+      <section class="editor-card card">
+        <div class="section-head compact"><div><span class="kicker">TU CONTEXTO</span><h2>Escribe o modifica la oración en cualquier momento</h2></div><span id="manual-badge" class="manual-badge hidden">contexto editado por ti</span></div>
+        <textarea id="prompt-editor" rows="3">La inteligencia artificial</textarea>
+        <div class="legend"><span><i class="legend-user"></i>texto escrito por ti</span><span><i class="legend-model"></i>texto generado por el modelo</span></div>
+        <div id="token-strip" class="token-strip"></div>
+      </section>
 
-    <section class="sentence-card card"><div class="section-head compact"><span class="kicker">ORACIÓN ACTUAL</span><div class="status-row"><span id="phase">Listo</span><span id="step-count">paso 0</span></div></div><div id="sentence" class="sentence">La inteligencia artificial</div><div id="selected-token" class="selected-token">Todavía no se ha elegido ningún token.</div></section>
+      <section class="control-dock card">
+        <div class="primary-controls"><button id="play-button" class="primary"><span id="play-icon">▶</span> Reproducir</button><button id="next-button" class="secondary">Siguiente token</button><button id="reset-button" class="ghost">Reiniciar</button></div>
+        <div class="sliders three"><label><span>Temperatura <b id="temperature-value">0.85</b></span><input id="temperature" type="range" min="0.2" max="2" step="0.05" value="0.85" /></label><label><span>Pausa <b id="speed-value">2.5 s</b></span><input id="speed" type="range" min="0.6" max="6" step="0.2" value="2.5" /></label><label><span>Límite <b id="max-tokens-value">60 tokens</b></span><input id="max-tokens" type="range" min="10" max="120" step="5" value="60" /></label></div>
+        <div class="mode-control"><button id="sample-mode" class="mode active">Muestreo</button><button id="greedy-mode" class="mode">Argmax</button></div>
+      </section>
 
-    <section class="pipeline" aria-label="flujo del modelo"><div data-phase="text">Tu texto</div><span>→</span><div data-phase="tokens">Tokens</div><span>→</span><div data-phase="model">Modelo</div><span>→</span><div data-phase="probabilities">Probabilidades</div><span>→</span><div data-phase="selection">Selección</div><span>→</span><div data-phase="append">Nuevo token</div></section>
+      <section class="sentence-card card"><div class="section-head compact"><span class="kicker">ORACIÓN ACTUAL</span><div class="status-row"><span id="phase">Listo</span><span id="step-count">paso 0</span></div></div><div id="sentence" class="sentence"><span class="sentence-user">La inteligencia artificial</span><span class="sentence-model"></span></div><div id="selected-token" class="selected-token">Todavía no se ha elegido ningún token.</div></section>
 
-    <section class="visual-grid">
-      <article class="card universe-card"><div class="section-head"><div><span class="kicker">POOL DE POSIBILIDADES</span><h2>Universo de tokens</h2></div><span id="universe-meta" class="muted">—</span></div><svg id="token-universe" role="img" aria-label="Distribución de probabilidad de los siguientes tokens"></svg><div id="candidate-detail" class="candidate-detail">Haz clic en un token para inspeccionarlo.</div></article>
-      <article class="card ranking-card"><div class="section-head"><div><span class="kicker">MÁS PROBABLES</span><h2>Top de candidatos</h2></div></div><div id="ranking" class="ranking"></div></article>
-    </section>
+      <section class="pipeline" aria-label="flujo del modelo"><div data-phase="text">Tu texto</div><span>→</span><div data-phase="tokens">Tokens</div><span>→</span><div data-phase="model">Modelo</div><span>→</span><div data-phase="probabilities">Probabilidades</div><span>→</span><div data-phase="selection">Selección</div><span>→</span><div data-phase="append">Nuevo token</div></section>
 
-    <section class="card history-card"><div class="section-head"><div><span class="kicker">MEMORIA DE LA DEMO</span><h2>Cada token conserva el estado en el que nació</h2></div><button id="present-button" class="ghost hidden">Volver al presente</button></div><div id="history" class="history empty">Los tokens generados aparecerán aquí. Haz clic en cualquiera para volver a ver sus probabilidades.</div></section>
+      <section class="visual-grid">
+        <article class="card universe-card"><div class="section-head"><div><span class="kicker">POOL DE POSIBILIDADES</span><h2>Universo de tokens</h2></div><span id="universe-meta" class="muted">—</span></div><svg id="token-universe" role="img" aria-label="Distribución de probabilidad de los siguientes tokens"></svg><div id="candidate-detail" class="candidate-detail">Haz clic en un token para inspeccionarlo.</div></article>
+        <article class="card ranking-card"><div class="section-head"><div><span class="kicker">MÁS PROBABLES</span><h2>Top de candidatos</h2></div></div><div id="ranking" class="ranking"></div></article>
+      </section>
+
+      <section class="card history-card"><div class="section-head"><div><span class="kicker">MEMORIA DE LA DEMO</span><h2>Cada token conserva el estado en el que nació</h2></div><button id="present-button" class="ghost hidden">Volver al presente</button></div><div id="history" class="history empty">Los tokens generados aparecerán aquí. Haz clic en cualquiera para volver a ver sus probabilidades.</div></section>
+    </div>
+
+    <div id="chat-view" class="mode-view hidden">
+      <section class="chat-grid">
+        <article class="card chat-card">
+          <div class="chat-header"><div><span class="kicker">MISMA IDEA, INTERFAZ FAMILIAR</span><h2>Chat con Spanish GPT-2</h2></div><span class="base-model-note">modelo base · no instruction-tuned</span></div>
+          <div id="chat-thread" class="chat-thread">
+            <div class="chat-explainer">Esta UI parece un chat, pero debajo GPT-2 sigue haciendo lo mismo: <b>predecir el siguiente token</b>. Si responde raro, eso también es parte de la demostración.</div>
+          </div>
+          <div class="chat-composer">
+            <textarea id="chat-input" rows="2" placeholder="Escribe algo, por ejemplo: ¿Qué es la inteligencia artificial?"></textarea>
+            <div class="chat-compose-row">
+              <label>máx. <select id="chat-max-tokens"><option>24</option><option selected>40</option><option>60</option><option>80</option></select> tokens</label>
+              <label>temperatura <input id="chat-temperature" type="number" min="0.2" max="2" step="0.05" value="0.85" /></label>
+              <button id="chat-send" class="primary">Enviar</button>
+            </div>
+          </div>
+        </article>
+
+        <aside class="card chat-inspector">
+          <div class="section-head"><div><span class="kicker">DETRÁS DE LA RESPUESTA</span><h2>Token por token</h2></div><span id="chat-inspector-meta" class="muted">esperando respuesta</span></div>
+          <div id="chat-token-history" class="chat-token-history empty">Los tokens de la respuesta aparecerán aquí.</div>
+          <svg id="chat-token-universe" role="img" aria-label="Probabilidades del token seleccionado"></svg>
+          <div id="chat-candidate-detail" class="candidate-detail">Haz clic en un token generado para inspeccionar su estado.</div>
+          <div id="chat-ranking" class="ranking compact-ranking"></div>
+        </aside>
+      </section>
+    </div>
 
     <section class="lower-grid">
       <article class="card concept-card"><span class="kicker">IDEA CLAVE</span><h2>El modelo no recibe palabras: recibe tokens.</h2><p>Para cada paso produce <strong>scores crudos (logits)</strong>. Softmax transforma esos scores en una distribución que suma 100%. Después se selecciona un token y el ciclo comienza de nuevo.</p><details><summary>Ver un poco más técnico</summary><pre>texto → tokenizer → ids → modelo → logits
 logits / temperatura → softmax → probabilidades
 probabilidades → muestreo (o argmax) → token</pre></details></article>
-      <article class="card model-card"><span class="kicker">MODELO CARGADO</span><div id="model-info" class="model-info"></div><details class="model-switcher"><summary>Cambiar modelo de demostración</summary><div class="switch-buttons"><button id="transformer-model" class="secondary">GPT-2 pequeño en español</button><button id="classroom-model" class="ghost">Modelo de clase</button></div></details></article>
+      <article class="card model-card"><span class="kicker">MODELO CARGADO</span><div id="model-info" class="model-info"></div><details class="model-switcher"><summary>Comparar con el modelo de clase</summary><div class="switch-buttons"><button id="transformer-model" class="secondary">Volver a Spanish GPT-2</button><button id="classroom-model" class="ghost">Usar modelo del semestre V</button></div></details></article>
     </section>
   </main>
 
