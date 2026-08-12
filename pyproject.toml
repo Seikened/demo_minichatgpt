@@ -1,16 +1,20 @@
 [project]
 name = "demo-mini-chat"
 version = "0.1.0"
-description = "Add your description here"
+description = "Interactive mini language-model demo for explaining next-token prediction."
 readme = "README.md"
 authors = [
     { name = "Fernando Leon Franco", email = "fernanlee2131@gmail.com" }
 ]
 requires-python = ">=3.14.5"
-dependencies = []
+dependencies = [
+    "numpy>=2.3",
+    "rich>=14.1",
+    "torch>=2.10",
+]
 
 [project.scripts]
-demo-mini-chat = "demo_mini_chat:main"
+demo-mini-chat = "demo_mini_chat.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.1,<0.13.0"]
