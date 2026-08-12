@@ -1,53 +1,50 @@
 # Demo Mini ChatGPT
 
-Demo didáctica e interactiva de un **modelo pequeño de lenguaje** para la charla _Más allá del prompt_. El objetivo no es recrear ChatGPT: es hacer visible, en una red diminuta, la misma idea fundamental de **usar contexto para producir una distribución sobre el siguiente token**.
+Demo didáctica para la charla **Más allá del prompt**. Parte del pequeño modelo de lenguaje construido en `Seikened/semestre_v/procesamiento_lenguaje/modelo_red_lenguaje.ipynb` y hace visible el ciclo de predicción del siguiente token.
 
-La base viene del notebook `procesamiento_lenguaje/modelo_red_lenguaje.ipynb` de `Seikened/semestre_v`: N-gramas de orden 4, embeddings, una red feed-forward, logits, softmax y generación token por token. Esta versión separa esas piezas en módulos y agrega una visualización en vivo.
+La arquitectura conserva la idea del ejercicio de clase: N-grama de orden 4, ventana de tres tokens, embeddings, red feed-forward, logits, softmax y generación token por token. Para la presentación se usa un corpus sintético limpio y pequeño, de modo que el modelo pueda entrenarse rápido y proyectarse sin sorpresas.
 
-## Ejecutar
+## Demo visual
 
 ```bash
 uv sync
 uv run python main.py
 ```
 
-También puede correrse directamente:
+Se abrirá `http://localhost:8080` en el navegador.
+
+La interfaz permite detener y observar cada token. Primero muestra la distribución completa sobre el vocabulario; después resalta la palabra elegida; finalmente incorpora esa palabra a la oración y vuelve a calcular el siguiente paso.
+
+En pantalla se muestran simultáneamente:
+
+- la oración que se está formando;
+- la ventana actual de tres tokens;
+- el universo completo de palabras, donde tamaño y opacidad representan probabilidad relativa;
+- el Top-10 de candidatos con su probabilidad;
+- la palabra finalmente elegida;
+- un mapa PCA 2D de los embeddings y los vecinos de la palabra seleccionada;
+- el flujo `contexto → embeddings → red → logits → softmax → selección`;
+- temperatura y comparación entre muestreo probabilístico y `argmax` determinista.
+
+La pausa didáctica puede ajustarse entre 0.5 y 6 segundos por token. También puede avanzarse manualmente con **Siguiente token**.
+
+## Demo de terminal
+
+La versión anterior con Rich sigue disponible como fallback:
 
 ```bash
-uv run demo-mini-chat --seed "la inteligencia artificial" --max-tokens 20
+uv run demo-mini-chat-cli
 ```
 
-La primera ejecución entrena un modelo pequeño y guarda el checkpoint en `.artifacts/mini_language_model.pt`. Las siguientes ejecuciones lo cargan directamente.
+## Modelo
 
-Para volver a entrenar:
+La primera ejecución entrena el modelo pequeño y guarda el checkpoint en `.artifacts/mini_language_model.pt`. Las siguientes ejecuciones cargan ese checkpoint.
+
+Para forzar un nuevo entrenamiento desde la terminal:
 
 ```bash
-uv run demo-mini-chat --retrain
+uv run demo-mini-chat-cli --retrain
 ```
-
-## Qué se ve en pantalla
-
-Mientras el texto se genera aparecen simultáneamente:
-
-- la frase actual;
-- la ventana de contexto de tres tokens;
-- los siguientes tokens con mayor probabilidad;
-- la distribución producida por softmax;
-- el token seleccionado;
-- palabras cercanas en el espacio de embeddings;
-- el modo de decodificación y la temperatura.
-
-El modo por defecto usa **muestreo probabilístico**. Para comparar con una salida determinista:
-
-```bash
-uv run demo-mini-chat --deterministic --seed "el modelo"
-```
-
-En el modo interactivo existen los comandos `:temp 0.7`, `:mode sample`, `:mode greedy` y `:q`.
-
-## Corpus
-
-El notebook original utilizaba tweets de MEX-A3T. Esta demo usa un corpus sintético, pequeño y limpio para que el entrenamiento sea rápido y el contenido pueda proyectarse sin sorpresas. La arquitectura didáctica se mantiene; el dataset se cambió deliberadamente para la presentación.
 
 ## Pruebas
 
