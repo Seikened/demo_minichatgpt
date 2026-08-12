@@ -12,7 +12,7 @@ from .engine import MiniLanguageEngine
 from .schemas import CandidateState, GenerationState, ModelInfo, TokenState
 
 
-TRANSFORMER_MODEL_ID = "datificate/gpt2-small-spanish"
+TRANSFORMER_MODEL_ID = "mrm8488/spanish-gpt2"
 CLASSROOM_CHECKPOINT = Path(".artifacts/mini_language_model.pt")
 
 
@@ -48,13 +48,13 @@ class TransformerBackend:
 
         self.info = ModelInfo(
             kind="transformer",
-            name="GPT-2 small · español",
-            description="Transformer autoregresivo pequeño: predice el siguiente token a partir del contexto previo.",
+            name="Spanish GPT-2 · ~0.1B",
+            description="Transformer autoregresivo pequeño entrenado desde cero en español.",
             vocabulary_size=int(self.tokenizer.vocab_size),
             parameter_count=sum(parameter.numel() for parameter in self.model.parameters()),
             context_window=int(getattr(self.model.config, "n_positions", 1024)),
-            training_data="Wikipedia en español · ~3 GB de texto preprocesado",
-            tokenizer="Byte Pair Encoding (BPE) · subpalabras/tokens",
+            training_data="large_spanish_corpus · ~20 GB · 95% entrenamiento / 5% validación",
+            tokenizer="BPE · subpalabras/tokens",
             device=str(self.device),
         )
 
@@ -154,11 +154,7 @@ class ClassroomBackend:
     def step(self, text: str, temperature: float, mode: str, top_k: int) -> GenerationState:
         probabilities, _ = self.engine.distribution(text, temperature=temperature)
         ranked_ids = np.argsort(probabilities)[::-1]
-        visible_ids = [
-            int(idx)
-            for idx in ranked_ids
-            if self.engine.data.id_to_word[int(idx)] != self.engine.data.SOS
-        ][:top_k]
+        visible_ids = [int(idx) for idx in ranked_ids if self.engine.data.id_to_word[int(idx)] != self.engine.data.SOS][:top_k]
 
         if mode == "greedy":
             selected_id = int(ranked_ids[0])
@@ -170,9 +166,7 @@ class ClassroomBackend:
         for rank, token_id in enumerate(visible_ids, start=1):
             token = self.engine.data.id_to_word[token_id]
             state = self._token_state(token)
-            candidate = CandidateState(
-                **state.model_dump(), probability=float(probabilities[token_id]), rank=rank
-            )
+            candidate = CandidateState(**state.model_dump(), probability=float(probabilities[token_id]), rank=rank)
             candidates.append(candidate)
             if token_id == selected_id:
                 selected_candidate = candidate
@@ -198,7 +192,7 @@ class ClassroomBackend:
             text_before=text,
             text_after=text_after,
             input_tokens=input_tokens,
-            visible_context=input_tokens[-self.engine.config.window_size :],
+            visible_context=input_tokens[-self.engine.config.window_size:],
             candidates=candidates,
             selected=selected_candidate,
             other_probability_mass=other_mass,
