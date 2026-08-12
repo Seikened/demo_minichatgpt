@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .backends import ModelManager
-from .schemas import GenerationState, ModelInfo, ModelLoadRequest, StepRequest
+from .schemas import GenerateRequest, GenerationState, ModelInfo, ModelLoadRequest, StepRequest
 
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -56,7 +56,26 @@ async def next_token(request: StepRequest) -> GenerationState:
         raise HTTPException(status_code=500, detail=f"No se pudo calcular el siguiente token: {exc}") from exc
 
 
+@app.post("/api/generate", response_model=list[GenerationState])
+async def generate_tokens(request: GenerateRequest) -> list[GenerationState]:
+    if not manager.backend:
+        raise HTTPException(status_code=409, detail="Primero carga un modelo.")
+    try:
+        return await asyncio.to_thread(
+            manager.backend.generate,
+            request.text,
+            request.temperature,
+            request.mode,
+            request.top_k,
+            request.max_tokens,
+            request.stop_strings,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo generar la respuesta: {exc}") from exc
+
+
 def main() -> None:
+    print("Mini ChatGPT listo en http://127.0.0.1:8080")
     uvicorn.run(
         "demo_mini_chat.web:app",
         host="127.0.0.1",
