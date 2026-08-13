@@ -1,0 +1,34 @@
+name: Apply demo v5
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/apply-demo-v5.yml
+      - tools/run_demo_v5.py
+      - tools/demo_v5_chunks/**
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply and validate chat streaming changes
+        run: python tools/run_demo_v5.py
+      - name: Commit validated demo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --exit-code && { echo "No changes produced"; exit 1; } || true
+          git commit -m "Stream chat tokens and expose conditional probabilities"
+          git push origin HEAD:master
