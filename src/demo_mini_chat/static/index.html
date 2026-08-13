@@ -79,12 +79,12 @@
             <input id="temperature" type="range" min="0.2" max="2" step="0.05" value="0.85" />
           </label>
           <label>
-            <span>Pausa <b id="speed-value">2.5 s</b></span>
+            <span>Duración visual <b id="speed-value">2.5 s</b></span>
             <input id="speed" type="range" min="0.6" max="6" step="0.2" value="2.5" />
           </label>
           <label>
-            <span>Límite <b id="max-tokens-value">60 tokens</b></span>
-            <input id="max-tokens" type="range" min="10" max="120" step="5" value="60" />
+            <span>Límite <b id="max-tokens-value">80 tokens</b></span>
+            <input id="max-tokens" type="range" min="10" max="240" step="10" value="80" />
           </label>
         </div>
         <div class="mode-control">
@@ -145,10 +145,10 @@
             <div class="chat-explainer">Esta UI parece un chat, pero debajo GPT-2 sigue haciendo lo mismo: <b>predecir el siguiente token</b>. Si responde raro, eso también es parte de la demostración.</div>
           </div>
           <div class="chat-composer">
-            <textarea id="chat-input" rows="2" placeholder="Escribe algo, por ejemplo: ¿Qué es la inteligencia artificial?"></textarea>
+            <textarea id="chat-input" rows="2" placeholder="Escribe una consulta para el modelo">Actúa como un experto en inteligencia artificial y explícame con un ejemplo sencillo qué es una red neuronal.</textarea>
             <div class="chat-compose-row">
               <label>máx.
-                <select id="chat-max-tokens"><option>24</option><option selected>40</option><option>60</option><option>80</option></select>
+                <select id="chat-max-tokens"><option>40</option><option selected>80</option><option>120</option><option>160</option><option>240</option></select>
                 tokens
               </label>
               <label>temperatura <input id="chat-temperature" type="number" min="0.2" max="2" step="0.05" value="0.85" /></label>
@@ -163,6 +163,7 @@
             <span id="chat-inspector-meta" class="muted">esperando respuesta</span>
           </div>
           <div id="chat-token-history" class="chat-token-history empty">Los tokens de la respuesta aparecerán aquí.</div>
+          <div id="chat-sequence-summary" class="sequence-summary empty">La cadena condicional aparecerá conforme se generen tokens.</div>
           <svg id="chat-token-universe" role="img" aria-label="Probabilidades del token seleccionado"></svg>
           <div id="chat-candidate-detail" class="candidate-detail">Haz clic en un token generado para inspeccionar su estado.</div>
           <div id="chat-ranking" class="ranking compact-ranking"></div>

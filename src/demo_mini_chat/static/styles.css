@@ -404,3 +404,10 @@ pre { overflow: auto; padding: 14px; background: #edf3fa; border: 1px solid #ced
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* demo-v5-history-probability */
+.history-prob {
+  color: #245a9f;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+}

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .backends import ModelManager
@@ -72,6 +73,40 @@ async def generate_tokens(request: GenerateRequest) -> list[GenerationState]:
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"No se pudo generar la respuesta: {exc}") from exc
+
+
+
+def _generation_events(request: GenerateRequest):
+    backend = manager.backend
+    if backend is None:
+        return
+    try:
+        for state in backend.iter_generate(
+            request.text,
+            request.temperature,
+            request.mode,
+            request.top_k,
+            request.max_tokens,
+            request.stop_strings,
+        ):
+            yield f'{{"type":"state","state":{state.model_dump_json()}}}\n'
+    except Exception as exc:
+        detail = json.dumps(f"{type(exc).__name__}: {exc}", ensure_ascii=False)
+        yield f'{{"type":"error","detail":{detail}}}\n'
+
+
+@app.post("/api/generate-stream")
+def generate_tokens_stream(request: GenerateRequest) -> StreamingResponse:
+    if not manager.backend:
+        raise HTTPException(status_code=409, detail="Primero carga un modelo.")
+    return StreamingResponse(
+        _generation_events(request),
+        media_type="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 def main() -> None:

@@ -44,3 +44,21 @@ test('splitOrigin separates user context from generated continuation', () => {
     {user: 'Actúa como experto:', generated: ' una red'},
   );
 });
+
+test('timingPlan makes the slider value the complete visual duration per token', () => {
+  const timing = S.timingPlan(0.6);
+  assert.equal(timing.totalMs, 600);
+  assert.ok(Math.abs(timing.model + timing.probabilities + timing.selection - 600) < 1e-9);
+});
+
+test('sequenceStats chains conditional token probabilities in log space', () => {
+  const states = [
+    {selected: {probability: 0.5}},
+    {selected: {probability: 0.25}},
+  ];
+  const stats = S.sequenceStats(states);
+  assert.equal(stats.tokenCount, 2);
+  assert.ok(Math.abs(stats.geometricMeanProbability - Math.sqrt(0.125)) < 1e-12);
+  assert.ok(Math.abs(stats.cumulativeLog10Probability - Math.log10(0.125)) < 1e-12);
+  assert.ok(Math.abs(stats.averageSurprisalBits - 1.5) < 1e-12);
+});

@@ -42,7 +42,7 @@ class StepRequest(BaseModel):
 
 
 class GenerateRequest(StepRequest):
-    max_tokens: int = Field(default=40, ge=1, le=120)
+    max_tokens: int = Field(default=80, ge=1, le=256)
     stop_strings: list[str] = Field(default_factory=list, max_length=8)
 
 

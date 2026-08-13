@@ -4,6 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const DEFAULT_AUTOCOMPLETE_PROMPT = 'Actúa como experto en inteligencia artificial y explica qué es una red neuronal:';
+  const DEFAULT_CHAT_PROMPT = 'Actúa como un experto en inteligencia artificial y explícame con un ejemplo sencillo qué es una red neuronal.';
 
   const app = {
     model: null,
@@ -16,12 +17,14 @@
     speed: 2.5,
     mode: 'sample',
     inspecting: null,
-    maxTokens: 60,
+    maxTokens: 80,
     autocompleteOrigin: DEFAULT_AUTOCOMPLETE_PROMPT,
     view: 'autocomplete',
     chatMessages: [],
     chatStates: [],
     chatInspecting: null,
+    chatStreaming: false,
+    chatAbortController: null,
   };
 
   function setPlaying(value) {
@@ -57,8 +60,72 @@
     return response.json();
   }
 
+  async function streamApi(path, payload, signal, onEvent) {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+      signal,
+    });
+    if (!response.ok) {
+      let message = `HTTP ${response.status}`;
+      try {
+        const body = await response.json();
+        message = body.detail || message;
+      } catch (_) {
+        // Keep the HTTP fallback when the server did not return JSON.
+      }
+      throw new Error(message);
+    }
+    if (!response.body) throw new Error('El navegador no recibió un stream de respuesta.');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const {done, value} = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), {stream: !done});
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === 'error') throw new Error(event.detail || 'Error durante la generación.');
+        onEvent(event);
+      }
+      if (done) break;
+    }
+
+    if (buffer.trim()) {
+      const event = JSON.parse(buffer);
+      if (event.type === 'error') throw new Error(event.detail || 'Error durante la generación.');
+      onEvent(event);
+    }
+  }
+
+  function cleanChatCompletion(value, final = false) {
+    const visible = String(value || '').split(/\n(?:Usuario|User|Humano):/)[0];
+    return final ? visible.trim() : visible.trimStart();
+  }
+
+  function setChatStreaming(value) {
+    app.chatStreaming = value;
+    const button = $('chat-send');
+    button.textContent = value ? 'Detener' : 'Enviar';
+    button.classList.toggle('stop-stream', value);
+    $('chat-input').disabled = value;
+    $('chat-max-tokens').disabled = value;
+    $('chat-temperature').disabled = value;
+  }
+
+  function stopChatStream() {
+    if (app.chatAbortController) app.chatAbortController.abort();
+  }
+
   async function loadModel(kind = 'transformer') {
     setPlaying(false);
+    stopChatStream();
     app.pending = null;
     const loading = $('loading');
     loading.classList.remove('done');
@@ -120,11 +187,11 @@
     V.setPhase('text');
   }
 
-  async function phaseWait() {
-    const end = performance.now() + app.speed * 650;
+  async function phaseWait(milliseconds, automatic) {
+    const end = performance.now() + Math.max(0, milliseconds);
     while (performance.now() < end) {
-      if (!app.playing) return false;
-      await sleep(45);
+      if (automatic && !app.playing) return false;
+      await sleep(Math.min(25, Math.max(1, end - performance.now())));
     }
     return true;
   }
@@ -167,22 +234,21 @@
   }
 
   async function animateState(state, automatic, phase = 0) {
+    const timing = S.timingPlan(app.speed);
     app.pending = null;
     if (phase <= 0) {
       showProbabilities(state);
-      if (automatic && !(await phaseWait())) {
+      if (!(await phaseWait(timing.probabilities, automatic))) {
         app.pending = {state, phase: 1};
         return false;
       }
-      if (!automatic) await sleep(Math.min(800, app.speed * 260));
     }
     if (phase <= 1) {
       showSelection(state);
-      if (automatic && !(await phaseWait())) {
+      if (!(await phaseWait(timing.selection, automatic))) {
         app.pending = {state, phase: 2};
         return false;
       }
-      if (!automatic) await sleep(Math.min(800, app.speed * 260));
     }
     if (phase <= 2) commitState(state);
     return true;
@@ -207,7 +273,11 @@
       });
       V.setPhase('model');
       $('phase').textContent = 'El modelo calcula un score crudo (logit) para cada token del vocabulario…';
-      if (automatic) await sleep(Math.min(650, app.speed * 180));
+      const timing = S.timingPlan(app.speed);
+      if (!(await phaseWait(timing.model, automatic))) {
+        app.pending = {state, phase: 0};
+        return false;
+      }
       return await animateState(state, automatic, 0);
     } catch (error) {
       $('phase').textContent = `Error: ${error.message}`;
@@ -232,7 +302,7 @@
       const completed = await calculateStep(true);
       if (!completed && !app.playing) break;
       if (!app.playing) break;
-      await sleep(60);
+      await sleep(0);
     }
     if (app.history.length >= app.maxTokens) {
       $('phase').textContent = `Límite de ${app.maxTokens} tokens alcanzado · la demo se detuvo aquí.`;
@@ -253,7 +323,7 @@
     app.history.forEach((state, index) => {
       const button = document.createElement('button');
       button.className = `history-token${app.inspecting === index ? ' active' : ''}`;
-      button.innerHTML = `<span class="history-index">${index + 1}</span><span>${V.esc(state.selected.display)}</span><span class="history-arrow">→ ?</span>`;
+      button.innerHTML = `<span class="history-index">${index + 1}</span><span>${V.esc(state.selected.display)}</span><span class="history-prob">${V.pct(state.selected.probability)}</span><span class="history-arrow">→ ?</span>`;
       button.title = `Haz clic para ver qué volvió probable después de “${state.selected.display}”`;
       button.onclick = () => inspectState(index);
       history.appendChild(button);
@@ -347,16 +417,18 @@
   }
 
   function resetChat() {
+    stopChatStream();
     app.chatMessages = [];
     app.chatStates = [];
     app.chatInspecting = null;
-    $('chat-input').value = '';
+    $('chat-input').value = DEFAULT_CHAT_PROMPT;
     $('chat-token-history').className = 'chat-token-history empty';
     $('chat-token-history').textContent = 'Los tokens de la respuesta aparecerán aquí.';
     $('chat-ranking').innerHTML = '';
     d3.select('#chat-token-universe').selectAll('*').remove();
     $('chat-inspector-meta').textContent = 'esperando respuesta';
     $('chat-candidate-detail').textContent = 'Haz clic en un token generado para inspeccionar su estado.';
+    renderChatSequenceSummary();
     renderChatThread();
   }
 
@@ -365,15 +437,15 @@
     thread.innerHTML = '<div class="chat-explainer">Esta UI parece un chat, pero debajo GPT-2 sigue haciendo lo mismo: <b>predecir el siguiente token</b>. Si responde raro, eso también es parte de la demostración.</div>';
     app.chatMessages.forEach((message) => {
       const row = document.createElement('div');
-      row.className = `chat-message ${message.role}`;
+      row.className = `chat-message ${message.role}${message.streaming ? ' streaming' : ''}`;
       const bubble = document.createElement('div');
       bubble.className = 'chat-bubble';
-      bubble.textContent = message.content;
+      bubble.textContent = message.content || (message.streaming ? '' : '(sin continuación)');
       row.appendChild(bubble);
       if (message.role === 'assistant' && message.states?.length) {
         const inspect = document.createElement('button');
         inspect.className = 'inspect-response';
-        inspect.textContent = `${message.states.length} tokens · ver detrás`;
+        inspect.textContent = `${message.states.length} tokens · ${message.streaming ? 'generando…' : 'ver detrás'}`;
         inspect.onclick = () => {
           app.chatStates = message.states;
           renderChatTokenHistory();
@@ -395,7 +467,12 @@
   }
 
   async function sendChat() {
-    if (app.busy || !app.model) return;
+    if (app.chatStreaming) {
+      stopChatStream();
+      return;
+    }
+    if (!app.model) return;
+
     const text = $('chat-input').value.trim();
     if (!text) return;
     app.chatMessages.push({role: 'user', content: text});
@@ -403,36 +480,82 @@
     renderChatThread();
 
     const prompt = buildChatPrompt();
-    app.chatMessages.push({role: 'assistant', content: '…'});
+    const assistantMessage = {role: 'assistant', content: '', states: [], streaming: true};
+    app.chatMessages.push(assistantMessage);
+    app.chatStates = assistantMessage.states;
     renderChatThread();
-    $('chat-send').disabled = true;
+    renderChatTokenHistory();
+
+    const controller = new AbortController();
+    app.chatAbortController = controller;
+    setChatStreaming(true);
+
     try {
       const maxTokens = Number($('chat-max-tokens').value);
       const temperature = Number($('chat-temperature').value);
-      const states = await api('/api/generate', {
-        text: prompt,
-        temperature,
-        mode: 'sample',
-        top_k: 48,
-        max_tokens: maxTokens,
-        stop_strings: ['\nUsuario:', '\nUser:', '\nHumano:'],
-      });
-      let completion = states.length ? states[states.length - 1].text_after.slice(prompt.length) : '';
-      completion = completion.split(/\n(?:Usuario|User|Humano):/)[0].trim();
-      app.chatMessages.pop();
-      app.chatMessages.push({role: 'assistant', content: completion || '(sin continuación)', states});
-      app.chatStates = states;
+      await streamApi(
+        '/api/generate-stream',
+        {
+          text: prompt,
+          temperature,
+          mode: 'sample',
+          top_k: 48,
+          max_tokens: maxTokens,
+          stop_strings: ['\nUsuario:', '\nUser:', '\nHumano:'],
+        },
+        controller.signal,
+        (event) => {
+          if (event.type !== 'state' || !event.state) return;
+          assistantMessage.states.push(event.state);
+          app.chatStates = assistantMessage.states;
+          assistantMessage.content = cleanChatCompletion(event.state.text_after.slice(prompt.length));
+          renderChatThread();
+          renderChatTokenHistory();
+        },
+      );
+
+      assistantMessage.streaming = false;
+      assistantMessage.content = cleanChatCompletion(assistantMessage.content, true) || '(sin continuación)';
       renderChatThread();
       renderChatTokenHistory();
-      if (states.length) inspectChatState(states.length - 1);
+      if (assistantMessage.states.length) inspectChatState(assistantMessage.states.length - 1);
     } catch (error) {
-      app.chatMessages.pop();
-      app.chatMessages.push({role: 'assistant', content: `Error: ${error.message}`, states: []});
+      assistantMessage.streaming = false;
+      if (error.name === 'AbortError') {
+        assistantMessage.content = cleanChatCompletion(assistantMessage.content, true) || '(generación detenida)';
+      } else {
+        assistantMessage.content = `Error: ${error.message}`;
+        assistantMessage.states = [];
+        app.chatStates = [];
+      }
       renderChatThread();
+      renderChatTokenHistory();
     } finally {
-      $('chat-send').disabled = false;
+      if (app.chatAbortController === controller) app.chatAbortController = null;
+      setChatStreaming(false);
       $('chat-input').focus();
     }
+  }
+
+
+  function renderChatSequenceSummary() {
+    const summary = $('chat-sequence-summary');
+    const stats = S.sequenceStats(app.chatStates);
+    if (!stats.tokenCount) {
+      summary.className = 'sequence-summary empty';
+      summary.textContent = 'La cadena condicional aparecerá conforme se generen tokens.';
+      return;
+    }
+
+    summary.className = 'sequence-summary';
+    summary.innerHTML = `<div class="sequence-formula">P(respuesta | prompt) = ∏ P(tokenᵢ | prompt + tokens anteriores)</div>
+      <div class="sequence-metrics">
+        <span><b>${stats.tokenCount}</b> tokens</span>
+        <span><b>${V.pct(stats.geometricMeanProbability)}</b> media geométrica por paso</span>
+        <span><b>${stats.averageSurprisalBits.toFixed(2)}</b> bits/token</span>
+        <span><b>${stats.cumulativeLog10Probability.toFixed(1)}</b> log₁₀ del producto</span>
+      </div>
+      <p>No es una medida de verdad ni de comprensión: resume qué tan probable fue esta secuencia para el modelo.</p>`;
   }
 
   function renderChatTokenHistory() {
@@ -447,11 +570,12 @@
     app.chatStates.forEach((state, index) => {
       const button = document.createElement('button');
       button.className = `chat-state-token${app.chatInspecting === index ? ' active' : ''}`;
-      button.textContent = state.selected.display;
+      button.innerHTML = `<span>${V.esc(state.selected.display)}</span><small>${V.pct(state.selected.probability)}</small>`;
       button.title = `#${index + 1} · ${V.pct(state.selected.probability)} · rank ${state.selected.rank} · raw ${state.selected.raw}`;
       button.onclick = () => inspectChatState(index);
       container.appendChild(button);
     });
+    renderChatSequenceSummary();
   }
 
   function inspectChatState(index) {
@@ -523,7 +647,7 @@
     $('phase').textContent = 'Cambiaste el contexto: el siguiente paso se recalculará desde este texto.';
     V.setPhase('text');
   });
-  $('chat-send').onclick = sendChat;
+  $('chat-send').onclick = () => sendChat();
   $('chat-input').addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();

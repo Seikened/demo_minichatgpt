@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 import unicodedata
@@ -159,7 +160,7 @@ class TransformerBackend:
             top_k,
         )
 
-    def generate(
+    def iter_generate(
         self,
         text: str,
         temperature: float,
@@ -167,8 +168,8 @@ class TransformerBackend:
         top_k: int,
         max_tokens: int,
         stop_strings: list[str] | None = None,
-    ) -> list[GenerationState]:
-        """Generate many tokens quickly while preserving every intermediate probability state."""
+    ) -> Iterator[GenerationState]:
+        """Yield tokens as they are produced while preserving the model cache."""
         stop_strings = stop_strings or []
         initial_text = text
         current_text = text
@@ -176,9 +177,9 @@ class TransformerBackend:
         context_ids = input_ids[0].detach().cpu().tolist()
         model_input = input_ids
         past_key_values = None
-        states: list[GenerationState] = []
+        available_positions = max(0, int(self.info.context_window or 1024) - len(context_ids))
 
-        for _ in range(max_tokens):
+        for _ in range(min(max_tokens, available_positions)):
             with torch.inference_mode():
                 output = self.model(
                     input_ids=model_input,
@@ -203,7 +204,7 @@ class TransformerBackend:
                 mode,
                 top_k,
             )
-            states.append(state)
+            yield state
             current_text = state.text_after
             context_ids.append(selected_id)
 
@@ -215,7 +216,16 @@ class TransformerBackend:
 
             model_input = torch.tensor([[selected_id]], dtype=torch.long, device=self.device)
 
-        return states
+    def generate(
+        self,
+        text: str,
+        temperature: float,
+        mode: str,
+        top_k: int,
+        max_tokens: int,
+        stop_strings: list[str] | None = None,
+    ) -> list[GenerationState]:
+        return list(self.iter_generate(text, temperature, mode, top_k, max_tokens, stop_strings))
 
 
 class ClassroomBackend:
@@ -291,6 +301,28 @@ class ClassroomBackend:
             model=self.info,
         )
 
+    def iter_generate(
+        self,
+        text: str,
+        temperature: float,
+        mode: str,
+        top_k: int,
+        max_tokens: int,
+        stop_strings: list[str] | None = None,
+    ) -> Iterator[GenerationState]:
+        stop_strings = stop_strings or []
+        initial_text = text
+        current_text = text
+        for _ in range(max_tokens):
+            state = self.step(current_text, temperature, mode, top_k)
+            yield state
+            current_text = state.text_after
+            if state.selected.raw == self.engine.data.EOS:
+                break
+            generated_suffix = current_text[len(initial_text):]
+            if any(stop and stop in generated_suffix for stop in stop_strings):
+                break
+
     def generate(
         self,
         text: str,
@@ -300,20 +332,7 @@ class ClassroomBackend:
         max_tokens: int,
         stop_strings: list[str] | None = None,
     ) -> list[GenerationState]:
-        stop_strings = stop_strings or []
-        initial_text = text
-        current_text = text
-        states: list[GenerationState] = []
-        for _ in range(max_tokens):
-            state = self.step(current_text, temperature, mode, top_k)
-            states.append(state)
-            current_text = state.text_after
-            if state.selected.raw == self.engine.data.EOS:
-                break
-            generated_suffix = current_text[len(initial_text):]
-            if any(stop and stop in generated_suffix for stop in stop_strings):
-                break
-        return states
+        return list(self.iter_generate(text, temperature, mode, top_k, max_tokens, stop_strings))
 
 
 @dataclass(slots=True)
