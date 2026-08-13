@@ -15,7 +15,7 @@ from .schemas import GenerateRequest, GenerationState, ModelInfo, ModelLoadReque
 
 STATIC_DIR = Path(__file__).parent / "static"
 manager = ModelManager()
-app = FastAPI(title="Más allá del prompt · Mini ChatGPT", docs_url=None, redoc_url=None)
+app = FastAPI(title="Más allá del prompt · Qué ve realmente un modelo", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -110,7 +110,7 @@ def generate_tokens_stream(request: GenerateRequest) -> StreamingResponse:
 
 
 def main() -> None:
-    print("Mini ChatGPT listo en http://127.0.0.1:8080")
+    print("Demo de lenguaje lista en http://127.0.0.1:8080")
     uvicorn.run(
         "demo_mini_chat.web:app",
         host="127.0.0.1",

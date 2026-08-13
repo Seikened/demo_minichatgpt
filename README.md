@@ -1,4 +1,4 @@
-# Demo Mini ChatGPT
+# Más allá del prompt · Modelo de lenguaje visual
 
 Demo didáctica para **Más allá del prompt**: observar, paso a paso, cómo un modelo de lenguaje convierte contexto en una distribución de probabilidad y selecciona el siguiente token.
 

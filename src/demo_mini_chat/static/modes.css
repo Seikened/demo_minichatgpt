@@ -263,3 +263,11 @@ button.stop-stream {
 
 .sequence-metrics b { color: #123f82; }
 .sequence-summary p { margin: 9px 0 0; color: #627288; font-size: 0.68rem; line-height: 1.45; }
+
+
+/* demo-v6-sentence-autoscroll */
+#autocomplete-view .sentence-card.is-stuck .sentence {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}

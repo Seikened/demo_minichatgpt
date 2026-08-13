@@ -162,6 +162,9 @@
     model.textContent = split.generated;
 
     sentence.append(user, model);
+    requestAnimationFrame(() => {
+      sentence.scrollTop = sentence.scrollHeight;
+    });
   }
 
   function resetAutocomplete() {

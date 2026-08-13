@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Más allá del prompt · Mini ChatGPT</title>
+  <title>Más allá del prompt · Qué ve realmente un modelo</title>
   <link rel="stylesheet" href="/static/styles.css" />
   <link rel="stylesheet" href="/static/modes.css" />
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
@@ -22,7 +22,8 @@
       <div>
         <div class="eyebrow">MÁS ALLÁ DEL PROMPT</div>
         <h1>¿Qué ve realmente un modelo?</h1>
-        <p>Texto → tokens → probabilidades → siguiente token.</p>
+        <p class="hero-subtitle">Inteligencia artificial generativa en procesamiento de lenguaje natural.</p>
+        <p class="hero-flow">Texto → tokens → probabilidades → siguiente token.</p>
       </div>
       <div id="model-badge" class="model-badge">modelo sin cargar</div>
     </header>
@@ -52,7 +53,6 @@
           <span><i class="legend-user"></i>texto escrito por ti</span>
           <span><i class="legend-model"></i>texto generado por el modelo</span>
         </div>
-        <div id="token-strip" class="token-strip"></div>
 
         <div class="context-memory">
           <div class="context-memory-head">
@@ -171,19 +171,7 @@
       </section>
     </div>
 
-    <section class="lower-grid">
-      <article class="card concept-card">
-        <span class="kicker">IDEA CLAVE</span>
-        <h2>El modelo no recibe palabras: recibe tokens.</h2>
-        <p>Para cada paso produce <strong>scores crudos (logits)</strong>. Softmax transforma esos scores en una distribución que suma 100%. Después se selecciona un token y el ciclo comienza de nuevo.</p>
-        <details>
-          <summary>Ver un poco más técnico</summary>
-          <pre>texto → tokenizer → ids → modelo → logits
-logits / temperatura → softmax → probabilidades
-probabilidades → muestreo (o argmax) → token</pre>
-        </details>
-      </article>
-
+    <section class="model-section">
       <article class="card model-card">
         <span class="kicker">MODELO CARGADO</span>
         <div id="model-info" class="model-info"></div>
@@ -196,6 +184,19 @@ probabilidades → muestreo (o argmax) → token</pre>
         </details>
       </article>
     </section>
+
+    <footer class="credits card">
+      <div class="credits-primary">
+        <span class="kicker">CRÉDITOS</span>
+        <p><strong>Concepto, dirección y desarrollo del código:</strong> Fernando Leon Franco.</p>
+        <p><strong>Diseño e implementación de la interfaz:</strong> Fernando Leon Franco, con asistencia de ChatGPT (OpenAI).</p>
+      </div>
+      <div class="credits-model">
+        <p><strong>Familia y arquitectura GPT-2:</strong> OpenAI.</p>
+        <p><strong>Pesos en español utilizados:</strong> <code>mrm8488/spanish-gpt2</code>.</p>
+        <p class="credits-note">Los componentes de terceros conservan sus licencias y atribuciones.</p>
+      </div>
+    </footer>
   </main>
 
   <script src="/static/state.js"></script>

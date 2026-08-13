@@ -31,7 +31,7 @@ def run_once(
     delay: float,
     deterministic: bool,
 ) -> None:
-    console.rule("[bold]Mini ChatGPT · siguiente token")
+    console.rule("[bold]Modelo de lenguaje · siguiente token")
     result = animate_generation(
         engine,
         seed,
