@@ -180,7 +180,6 @@
     $('phase').textContent = 'Listo para calcular el siguiente token';
     $('step-count').textContent = 'paso 0';
     $('manual-badge').classList.add('hidden');
-    $('token-strip').innerHTML = '';
     $('ranking').innerHTML = '';
     d3.select('#token-universe').selectAll('*').remove();
     $('universe-meta').textContent = `${app.model?.vocabulary_size?.toLocaleString() || '—'} tokens posibles`;
