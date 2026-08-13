@@ -1,18 +1,35 @@
 (() => {
   const V = window.DemoVisuals;
+  const S = window.DemoState;
   const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const DEFAULT_AUTOCOMPLETE_PROMPT = 'Actúa como experto en inteligencia artificial y explica qué es una red neuronal:';
+
   const app = {
-    model:null, history:[], playing:false, busy:false, pending:null,
-    temperature:.85, speed:2.5, mode:'sample', inspecting:null, maxTokens:60,
-    autocompleteOrigin:'La inteligencia artificial', view:'autocomplete',
-    chatMessages:[], chatStates:[], chatInspecting:null,
+    model: null,
+    history: [],
+    afterSnapshots: new Map(),
+    playing: false,
+    busy: false,
+    pending: null,
+    temperature: 0.85,
+    speed: 2.5,
+    mode: 'sample',
+    inspecting: null,
+    maxTokens: 60,
+    autocompleteOrigin: DEFAULT_AUTOCOMPLETE_PROMPT,
+    view: 'autocomplete',
+    chatMessages: [],
+    chatStates: [],
+    chatInspecting: null,
   };
 
   function setPlaying(value) {
     app.playing = value;
     $('play-icon').textContent = value ? 'Ⅱ' : '▶';
-    $('play-button').childNodes[$('play-button').childNodes.length - 1].textContent = value ? ' Pausar' : ' Reproducir';
+    $('play-button').childNodes[$('play-button').childNodes.length - 1].textContent = value
+      ? ' Pausar'
+      : ' Reproducir';
   }
 
   function setBusy(value) {
@@ -22,16 +39,25 @@
   }
 
   async function api(path, payload) {
-    const response = await fetch(path, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
     if (!response.ok) {
       let message = `HTTP ${response.status}`;
-      try { const body = await response.json(); message = body.detail || message; } catch (_) {}
+      try {
+        const body = await response.json();
+        message = body.detail || message;
+      } catch (_) {
+        // Keep the HTTP fallback when the server did not return JSON.
+      }
       throw new Error(message);
     }
     return response.json();
   }
 
-  async function loadModel(kind='transformer') {
+  async function loadModel(kind = 'transformer') {
     setPlaying(false);
     app.pending = null;
     const loading = $('loading');
@@ -42,7 +68,7 @@
       ? 'Cargando Spanish GPT-2 local. La primera vez puede descargar los pesos; después usa la caché.'
       : 'Entrenando o cargando los pesos del modelo de tu clase…';
     try {
-      app.model = await api('/api/load', {model:kind});
+      app.model = await api('/api/load', {model: kind});
       V.renderModelInfo(app.model);
       resetAutocomplete();
       resetChat();
@@ -57,27 +83,28 @@
 
   function renderSentence(text = $('prompt-editor').value) {
     const sentence = $('sentence');
+    const split = S.splitOrigin(text, app.autocompleteOrigin);
     sentence.innerHTML = '';
+
     const user = document.createElement('span');
     user.className = 'sentence-user';
+    user.textContent = split.user;
+
     const model = document.createElement('span');
     model.className = 'sentence-model';
-    if (text.startsWith(app.autocompleteOrigin)) {
-      user.textContent = app.autocompleteOrigin;
-      model.textContent = text.slice(app.autocompleteOrigin.length);
-    } else {
-      user.textContent = text;
-    }
+    model.textContent = split.generated;
+
     sentence.append(user, model);
   }
 
   function resetAutocomplete() {
     app.history = [];
+    app.afterSnapshots.clear();
     app.pending = null;
     app.inspecting = null;
     setPlaying(false);
-    $('prompt-editor').value = 'La inteligencia artificial';
-    app.autocompleteOrigin = $('prompt-editor').value;
+    $('prompt-editor').value = DEFAULT_AUTOCOMPLETE_PROMPT;
+    app.autocompleteOrigin = DEFAULT_AUTOCOMPLETE_PROMPT;
     renderSentence();
     $('selected-token').textContent = 'Todavía no se ha elegido ningún token.';
     $('phase').textContent = 'Listo para calcular el siguiente token';
@@ -88,6 +115,7 @@
     d3.select('#token-universe').selectAll('*').remove();
     $('universe-meta').textContent = `${app.model?.vocabulary_size?.toLocaleString() || '—'} tokens posibles`;
     $('candidate-detail').textContent = 'Pulsa “Siguiente token” o “Reproducir”.';
+    $('present-button').classList.add('hidden');
     renderHistory();
     V.setPhase('text');
   }
@@ -112,7 +140,9 @@
   }
 
   function showSelection(state) {
-    $('phase').textContent = state.mode === 'greedy' ? 'Argmax: se toma el token con mayor probabilidad' : 'Muestreo: se toma una muestra de la distribución';
+    $('phase').textContent = state.mode === 'greedy'
+      ? 'Argmax: se toma el token con mayor probabilidad'
+      : 'Muestreo: se toma una muestra de la distribución';
     $('selected-token').innerHTML = `Elegido: <strong>${V.esc(state.selected.display)}</strong> · ${V.pct(state.selected.probability)} · ranking #${state.selected.rank}`;
     V.renderUniverse(state, app.model, true);
     V.renderRanking(state, true);
@@ -121,6 +151,11 @@
   }
 
   function commitState(state) {
+    const previousState = app.history[app.history.length - 1] || null;
+    if (previousState && previousState.text_after === state.text_before) {
+      app.afterSnapshots.set(previousState.state_id, state);
+    }
+
     $('prompt-editor').value = state.text_after;
     renderSentence(state.text_after);
     $('manual-badge').classList.add('hidden');
@@ -131,23 +166,29 @@
     renderHistory();
   }
 
-  async function animateState(state, automatic, phase=0) {
+  async function animateState(state, automatic, phase = 0) {
     app.pending = null;
     if (phase <= 0) {
       showProbabilities(state);
-      if (automatic && !(await phaseWait())) { app.pending = {state,phase:1}; return false; }
+      if (automatic && !(await phaseWait())) {
+        app.pending = {state, phase: 1};
+        return false;
+      }
       if (!automatic) await sleep(Math.min(800, app.speed * 260));
     }
     if (phase <= 1) {
       showSelection(state);
-      if (automatic && !(await phaseWait())) { app.pending = {state,phase:2}; return false; }
+      if (automatic && !(await phaseWait())) {
+        app.pending = {state, phase: 2};
+        return false;
+      }
       if (!automatic) await sleep(Math.min(800, app.speed * 260));
     }
     if (phase <= 2) commitState(state);
     return true;
   }
 
-  async function calculateStep(automatic=false) {
+  async function calculateStep(automatic = false) {
     if (app.busy || !app.model) return false;
     setBusy(true);
     try {
@@ -157,8 +198,13 @@
       }
       V.setPhase('tokens');
       $('phase').textContent = 'Tokenizando el contexto actual…';
-      const text = $('prompt-editor').value.trim() || 'La inteligencia artificial';
-      const state = await api('/api/step', {text,temperature:app.temperature,mode:app.mode,top_k:64});
+      const text = $('prompt-editor').value.trim() || DEFAULT_AUTOCOMPLETE_PROMPT;
+      const state = await api('/api/step', {
+        text,
+        temperature: app.temperature,
+        mode: app.mode,
+        top_k: 64,
+      });
       V.setPhase('model');
       $('phase').textContent = 'El modelo calcula un score crudo (logit) para cada token del vocabulario…';
       if (automatic) await sleep(Math.min(650, app.speed * 180));
@@ -173,7 +219,10 @@
   }
 
   async function togglePlay() {
-    if (app.playing) { setPlaying(false); return; }
+    if (app.playing) {
+      setPlaying(false);
+      return;
+    }
     if (app.history.length >= app.maxTokens) {
       $('phase').textContent = `Límite de ${app.maxTokens} tokens alcanzado. Auméntalo o usa “Siguiente token”.`;
       return;
@@ -196,34 +245,74 @@
     history.innerHTML = '';
     if (!app.history.length) {
       history.className = 'history empty';
-      history.textContent = 'Los tokens generados aparecerán aquí. Haz clic en cualquiera para volver a ver sus probabilidades.';
+      history.textContent = 'Aquí aparecerán los tokens generados. Al pulsar uno verás qué volvió probable después.';
       return;
     }
+
     history.className = 'history';
     app.history.forEach((state, index) => {
       const button = document.createElement('button');
       button.className = `history-token${app.inspecting === index ? ' active' : ''}`;
-      button.innerHTML = `<span class="history-index">${index + 1}</span><span>${V.esc(state.selected.display)}</span>`;
-      button.title = `${V.pct(state.selected.probability)} · ranking #${state.selected.rank}`;
+      button.innerHTML = `<span class="history-index">${index + 1}</span><span>${V.esc(state.selected.display)}</span><span class="history-arrow">→ ?</span>`;
+      button.title = `Haz clic para ver qué volvió probable después de “${state.selected.display}”`;
       button.onclick = () => inspectState(index);
       history.appendChild(button);
     });
   }
 
-  function inspectState(index) {
+  async function resolveAfterSnapshot(index) {
+    const sourceState = app.history[index];
+    const recordedNext = S.nextRecordedState(app.history, index);
+    if (recordedNext) return {snapshot: recordedNext, recorded: true};
+
+    const cached = app.afterSnapshots.get(sourceState.state_id);
+    if (cached) return {snapshot: cached, recorded: false};
+
+    const preview = await api('/api/step', {
+      text: sourceState.text_after,
+      temperature: sourceState.temperature,
+      mode: 'greedy',
+      top_k: 64,
+    });
+    app.afterSnapshots.set(sourceState.state_id, preview);
+    return {snapshot: preview, recorded: false};
+  }
+
+  async function inspectState(index) {
+    if (index < 0 || index >= app.history.length || app.busy) return;
     setPlaying(false);
     app.inspecting = index;
-    const state = app.history[index];
-    renderSentence(state.text_after);
-    $('phase').textContent = `Inspeccionando el estado que produjo el token #${index + 1}`;
-    $('selected-token').innerHTML = `<strong>${V.esc(state.selected.display)}</strong> nació con ${V.pct(state.selected.probability)} de probabilidad · ranking #${state.selected.rank}`;
-    V.renderTokenStrip(state.input_tokens);
-    V.renderUniverse(state, app.model, true);
-    V.renderRanking(state, true);
-    V.showCandidate(state.selected, app.model.vocabulary_size);
-    V.setPhase('selection');
-    $('present-button').classList.remove('hidden');
     renderHistory();
+
+    const sourceState = app.history[index];
+    renderSentence(sourceState.text_after);
+    $('phase').textContent = `Calculando qué fue probable después de “${sourceState.selected.display}”…`;
+    $('selected-token').innerHTML = `<strong>${V.esc(sourceState.selected.display)}</strong> fue elegida con ${V.pct(sourceState.selected.probability)} · ranking #${sourceState.selected.rank}.`;
+    $('present-button').classList.remove('hidden');
+
+    setBusy(true);
+    try {
+      const {snapshot, recorded} = await resolveAfterSnapshot(index);
+      const sourceLabel = V.esc(sourceState.selected.display);
+      $('phase').textContent = `Después de “${sourceState.selected.display}”, estas eran las probabilidades del siguiente token`;
+
+      if (recorded) {
+        $('selected-token').innerHTML = `<strong>${sourceLabel}</strong> fue elegida con ${V.pct(sourceState.selected.probability)} · ranking #${sourceState.selected.rank}. Después, el token realmente seleccionado fue <strong>${V.esc(snapshot.selected.display)}</strong> con ${V.pct(snapshot.selected.probability)} · ranking #${snapshot.selected.rank}.`;
+      } else {
+        $('selected-token').innerHTML = `<strong>${sourceLabel}</strong> fue elegida con ${V.pct(sourceState.selected.probability)} · ranking #${sourceState.selected.rank}. El siguiente token aún no se había generado; esta es la distribución exacta producida por ese contexto.`;
+      }
+
+      V.renderTokenStrip(snapshot.input_tokens);
+      V.renderUniverse(snapshot, app.model, recorded);
+      V.renderRanking(snapshot, recorded);
+      V.showCandidate(recorded ? snapshot.selected : snapshot.candidates[0], app.model.vocabulary_size);
+      V.setPhase(recorded ? 'selection' : 'probabilities');
+    } catch (error) {
+      $('phase').textContent = `No se pudo reconstruir el siguiente estado: ${error.message}`;
+    } finally {
+      setBusy(false);
+      renderHistory();
+    }
   }
 
   function backToPresent() {
@@ -236,6 +325,7 @@
       V.renderUniverse(state, app.model, true);
       V.renderRanking(state, true);
       V.renderTokenStrip(state.input_tokens);
+      V.showCandidate(state.selected, app.model.vocabulary_size);
     }
     renderHistory();
   }
@@ -253,6 +343,7 @@
     $('chat-view').classList.toggle('hidden', view !== 'chat');
     $('autocomplete-tab').classList.toggle('active', view === 'autocomplete');
     $('chat-tab').classList.toggle('active', view === 'chat');
+    if (view !== 'autocomplete') $('sentence-card').classList.remove('is-stuck');
   }
 
   function resetChat() {
@@ -272,7 +363,7 @@
   function renderChatThread() {
     const thread = $('chat-thread');
     thread.innerHTML = '<div class="chat-explainer">Esta UI parece un chat, pero debajo GPT-2 sigue haciendo lo mismo: <b>predecir el siguiente token</b>. Si responde raro, eso también es parte de la demostración.</div>';
-    app.chatMessages.forEach((message, messageIndex) => {
+    app.chatMessages.forEach((message) => {
       const row = document.createElement('div');
       row.className = `chat-message ${message.role}`;
       const bubble = document.createElement('div');
@@ -307,33 +398,36 @@
     if (app.busy || !app.model) return;
     const text = $('chat-input').value.trim();
     if (!text) return;
-    app.chatMessages.push({role:'user',content:text});
+    app.chatMessages.push({role: 'user', content: text});
     $('chat-input').value = '';
     renderChatThread();
 
     const prompt = buildChatPrompt();
-    const loadingMessage = {role:'assistant',content:'…'};
-    app.chatMessages.push(loadingMessage);
+    app.chatMessages.push({role: 'assistant', content: '…'});
     renderChatThread();
     $('chat-send').disabled = true;
     try {
       const maxTokens = Number($('chat-max-tokens').value);
       const temperature = Number($('chat-temperature').value);
       const states = await api('/api/generate', {
-        text:prompt, temperature, mode:'sample', top_k:48, max_tokens:maxTokens,
-        stop_strings:['\nUsuario:','\nUser:','\nHumano:'],
+        text: prompt,
+        temperature,
+        mode: 'sample',
+        top_k: 48,
+        max_tokens: maxTokens,
+        stop_strings: ['\nUsuario:', '\nUser:', '\nHumano:'],
       });
       let completion = states.length ? states[states.length - 1].text_after.slice(prompt.length) : '';
       completion = completion.split(/\n(?:Usuario|User|Humano):/)[0].trim();
       app.chatMessages.pop();
-      app.chatMessages.push({role:'assistant',content:completion || '(sin continuación)',states});
+      app.chatMessages.push({role: 'assistant', content: completion || '(sin continuación)', states});
       app.chatStates = states;
       renderChatThread();
       renderChatTokenHistory();
       if (states.length) inspectChatState(states.length - 1);
     } catch (error) {
       app.chatMessages.pop();
-      app.chatMessages.push({role:'assistant',content:`Error: ${error.message}`,states:[]});
+      app.chatMessages.push({role: 'assistant', content: `Error: ${error.message}`, states: []});
       renderChatThread();
     } finally {
       $('chat-send').disabled = false;
@@ -365,10 +459,29 @@
     app.chatInspecting = index;
     const state = app.chatStates[index];
     $('chat-inspector-meta').textContent = `token ${index + 1}/${app.chatStates.length} · ${V.pct(state.selected.probability)} · rank #${state.selected.rank}`;
-    V.renderUniverseInto('chat-token-universe','chat-inspector-meta','chat-candidate-detail',state,app.model,true,28);
-    V.renderRankingInto('chat-ranking',state,true,8);
-    V.showCandidateInto('chat-candidate-detail',state.selected,app.model.vocabulary_size);
+    V.renderUniverseInto(
+      'chat-token-universe',
+      'chat-inspector-meta',
+      'chat-candidate-detail',
+      state,
+      app.model,
+      true,
+      28,
+    );
+    V.renderRankingInto('chat-ranking', state, true, 8);
+    V.showCandidateInto('chat-candidate-detail', state.selected, app.model.vocabulary_size);
     renderChatTokenHistory();
+  }
+
+  function initStickySentenceObserver() {
+    const sentinel = $('sentence-sentinel');
+    const card = $('sentence-card');
+    if (!sentinel || !card || !('IntersectionObserver' in window)) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => card.classList.toggle('is-stuck', app.view === 'autocomplete' && !entry.isIntersecting),
+      {threshold: 0, rootMargin: '-92px 0px 0px 0px'},
+    );
+    observer.observe(sentinel);
   }
 
   $('autocomplete-tab').onclick = () => showView('autocomplete');
@@ -382,14 +495,25 @@
   $('classroom-model').onclick = () => loadModel('classroom');
   $('sample-mode').onclick = () => setMode('sample');
   $('greedy-mode').onclick = () => setMode('greedy');
-  $('temperature').oninput = (event) => { app.temperature = Number(event.target.value); $('temperature-value').textContent = app.temperature.toFixed(2); $('chat-temperature').value = app.temperature.toFixed(2); };
-  $('speed').oninput = (event) => { app.speed = Number(event.target.value); $('speed-value').textContent = `${app.speed.toFixed(1)} s`; };
-  $('max-tokens').oninput = (event) => { app.maxTokens = Number(event.target.value); $('max-tokens-value').textContent = `${app.maxTokens} tokens`; };
+  $('temperature').oninput = (event) => {
+    app.temperature = Number(event.target.value);
+    $('temperature-value').textContent = app.temperature.toFixed(2);
+    $('chat-temperature').value = app.temperature.toFixed(2);
+  };
+  $('speed').oninput = (event) => {
+    app.speed = Number(event.target.value);
+    $('speed-value').textContent = `${app.speed.toFixed(1)} s`;
+  };
+  $('max-tokens').oninput = (event) => {
+    app.maxTokens = Number(event.target.value);
+    $('max-tokens-value').textContent = `${app.maxTokens} tokens`;
+  };
   $('prompt-editor').addEventListener('input', () => {
     setPlaying(false);
     app.pending = null;
     app.inspecting = null;
     app.history = [];
+    app.afterSnapshots.clear();
     app.autocompleteOrigin = $('prompt-editor').value;
     renderSentence();
     renderHistory();
@@ -401,7 +525,10 @@
   });
   $('chat-send').onclick = sendChat;
   $('chat-input').addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendChat(); }
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendChat();
+    }
   });
   $('chat-temperature').oninput = (event) => {
     app.temperature = Number(event.target.value);
@@ -410,13 +537,16 @@
   };
   window.addEventListener('resize', () => {
     if (app.view === 'autocomplete') {
-      const state = app.inspecting !== null ? app.history[app.inspecting] : app.history[app.history.length - 1];
+      const state = app.inspecting !== null
+        ? S.nextRecordedState(app.history, app.inspecting) || app.history[app.inspecting]
+        : app.history[app.history.length - 1];
       if (state && app.model) V.renderUniverse(state, app.model, true);
     } else if (app.chatStates.length) {
       inspectChatState(app.chatInspecting ?? app.chatStates.length - 1);
     }
   });
 
+  initStickySentenceObserver();
   showView('autocomplete');
   loadModel('transformer');
 })();

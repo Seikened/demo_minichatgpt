@@ -1,7 +1,12 @@
 (() => {
   const $ = (id) => document.getElementById(id);
-  const pct = (value) => value < 0.0001 ? `${(value * 100).toExponential(2)}%` : `${(value * 100).toFixed(value > 0.01 ? 2 : 4)}%`;
-  const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const S = window.DemoState;
+  const pct = (value) => value < 0.0001
+    ? `${(value * 100).toExponential(2)}%`
+    : `${(value * 100).toFixed(value > 0.01 ? 2 : 4)}%`;
+  const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;',
+  }[ch]));
 
   function setPhase(name) {
     document.querySelectorAll('.pipeline [data-phase]').forEach((node) => {
@@ -26,12 +31,15 @@
     const container = $(targetId);
     if (!container) return;
     container.innerHTML = '';
-    const rows = state.candidates.slice(0, limit);
-    const max = Math.max(...rows.map((c) => c.probability), 1e-12);
+
+    const rows = S.rankingRows(state, limit, selected);
+    const max = Math.max(...rows.map((candidate) => candidate.probability), 1e-12);
+
     rows.forEach((candidate) => {
       const row = document.createElement('div');
       const isSelected = selected && candidate.id === state.selected.id;
-      row.className = `rank-row${isSelected ? ' selected' : ''}`;
+      row.className = `rank-row${isSelected ? ' selected' : ''}${candidate.outsideTop ? ' outside-top' : ''}`;
+      if (candidate.outsideTop) row.title = 'Token seleccionado fuera del top visible';
       const relative = Math.sqrt(candidate.probability / max) * 100;
       row.innerHTML = `<span class="rank-number">${candidate.rank}</span>
         <span class="rank-token" title="${esc(candidate.raw)}">${esc(candidate.display)}</span>
@@ -53,7 +61,9 @@
       return;
     }
     const rank = candidate.rank ? `ranking #${candidate.rank}` : 'resto del vocabulario';
-    const raw = candidate.raw && candidate.raw !== candidate.display ? ` · raw: ${esc(candidate.raw)}` : '';
+    const raw = candidate.raw && candidate.raw !== candidate.display
+      ? ` · raw: ${esc(candidate.raw)}`
+      : '';
     detail.innerHTML = `<strong>${esc(candidate.display)}</strong> · ${pct(candidate.probability)} · ${rank} · token id ${candidate.id ?? '—'}${raw} · vocabulario ${vocabularySize.toLocaleString()}`;
   }
 
@@ -69,49 +79,66 @@
     const height = Math.max(element.clientHeight, 300);
     svg.attr('viewBox', `0 0 ${width} ${height}`);
 
-    let candidates = state.candidates.slice(0, maxVisible).map((c) => ({...c, kind: 'token'}));
-    if (selected && !candidates.some((c) => c.id === state.selected.id)) {
+    const candidates = state.candidates
+      .slice(0, maxVisible)
+      .map((candidate) => ({...candidate, kind: 'token'}));
+
+    if (selected && !candidates.some((candidate) => candidate.id === state.selected.id)) {
       candidates.push({...state.selected, kind: 'token', forced: true});
     }
-    const maxP = Math.max(...candidates.map((c) => c.probability), 1e-12);
+
+    const maxProbability = Math.max(...candidates.map((candidate) => candidate.probability), 1e-12);
     const otherCount = Math.max(0, model.vocabulary_size - state.candidates.length);
     if (state.other_probability_mass > 0.00001 && otherCount > 0) {
-      candidates.push({id: -1, raw: 'otros', display: `otros ${otherCount.toLocaleString()}`, probability: state.other_probability_mass, rank: null, kind: 'other'});
+      candidates.push({
+        id: -1,
+        raw: 'otros',
+        display: `otros ${otherCount.toLocaleString()}`,
+        probability: state.other_probability_mass,
+        rank: null,
+        kind: 'other',
+      });
     }
 
-    const root = d3.hierarchy({children: candidates}).sum((d) => {
-      if (!d.probability) return 0;
-      const capped = d.kind === 'other' ? Math.min(d.probability, maxP * 2.7) : d.probability;
+    const root = d3.hierarchy({children: candidates}).sum((candidate) => {
+      if (!candidate.probability) return 0;
+      const capped = candidate.kind === 'other'
+        ? Math.min(candidate.probability, maxProbability * 2.7)
+        : candidate.probability;
       return Math.pow(capped, 0.34);
     });
     d3.pack().size([width, height]).padding(maxVisible > 40 ? 7 : 5)(root);
     const nodes = root.leaves();
 
-    const join = svg.selectAll('g.token-node').data(nodes, (d) => `${d.data.kind}-${d.data.id}`);
+    const join = svg.selectAll('g.token-node').data(nodes, (node) => `${node.data.kind}-${node.data.id}`);
     join.exit().transition().duration(260).style('opacity', 0).remove();
     const entered = join.enter().append('g').attr('class', 'token-node').style('opacity', 0);
     entered.append('circle').attr('r', 0);
     entered.append('text');
 
     const merged = entered.merge(join)
-      .attr('class', (d) => `token-node${d.data.kind === 'other' ? ' other' : ''}${selected && d.data.id === state.selected.id ? ' selected' : ''}`)
+      .attr('class', (node) => `token-node${node.data.kind === 'other' ? ' other' : ''}${selected && node.data.id === state.selected.id ? ' selected' : ''}`)
       .style('cursor', 'pointer')
-      .on('click', (_, d) => showCandidateInto(detailId, d.data, model.vocabulary_size));
+      .on('click', (_, node) => showCandidateInto(detailId, node.data, model.vocabulary_size));
 
     merged.transition().duration(460).ease(d3.easeCubicOut)
       .style('opacity', 1)
-      .attr('transform', (d) => `translate(${d.x},${d.y})`);
-    merged.select('circle').transition().duration(460).attr('r', (d) => d.r);
+      .attr('transform', (node) => `translate(${node.x},${node.y})`);
+    merged.select('circle').transition().duration(460).attr('r', (node) => node.r);
     merged.select('text')
-      .text((d) => d.r > 15 || (selected && d.data.id === state.selected.id) ? d.data.display : '')
-      .attr('font-size', (d) => Math.max(8, Math.min(17, d.r * 0.34)))
-      .each(function(d) {
-        const maxChars = Math.max(3, Math.floor(d.r / 4.8));
-        if (d.data.display.length > maxChars * 2 && d.r < 38) d3.select(this).text(`${d.data.display.slice(0, maxChars)}…`);
+      .text((node) => node.r > 15 || (selected && node.data.id === state.selected.id) ? node.data.display : '')
+      .attr('font-size', (node) => Math.max(8, Math.min(17, node.r * 0.34)))
+      .each(function trimLabel(node) {
+        const maxChars = Math.max(3, Math.floor(node.r / 4.8));
+        if (node.data.display.length > maxChars * 2 && node.r < 38) {
+          d3.select(this).text(`${node.data.display.slice(0, maxChars)}…`);
+        }
       });
 
     const meta = $(metaId);
-    if (meta) meta.textContent = `${model.vocabulary_size.toLocaleString()} tokens posibles · visibles ${Math.min(maxVisible, state.candidates.length)} + resto`;
+    if (meta) {
+      meta.textContent = `${model.vocabulary_size.toLocaleString()} tokens posibles · visibles ${Math.min(maxVisible, state.candidates.length)} + resto`;
+    }
   }
 
   function renderUniverse(state, model, selected = true) {
@@ -128,12 +155,23 @@
       ['Contexto máximo', model.context_window ? `${model.context_window.toLocaleString()} tokens` : '—'],
       ['Dispositivo', model.device],
     ];
-    $('model-info').innerHTML = rows.map(([key, value]) => `<div class="info-line"><span>${esc(key)}</span><b>${esc(value)}</b></div>`).join('');
+    $('model-info').innerHTML = rows
+      .map(([key, value]) => `<div class="info-line"><span>${esc(key)}</span><b>${esc(value)}</b></div>`)
+      .join('');
     $('model-badge').textContent = `${model.name} · ${model.vocabulary_size.toLocaleString()} tokens`;
   }
 
   window.DemoVisuals = {
-    pct, esc, setPhase, renderTokenStrip, renderRanking, renderRankingInto,
-    renderUniverse, renderUniverseInto, renderModelInfo, showCandidate, showCandidateInto,
+    pct,
+    esc,
+    setPhase,
+    renderTokenStrip,
+    renderRanking,
+    renderRankingInto,
+    renderUniverse,
+    renderUniverseInto,
+    renderModelInfo,
+    showCandidate,
+    showCandidateInto,
   };
 })();
